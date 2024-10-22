@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Information</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            cursor: pointer;
+            position: relative;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        th.asc::after {
+            content: "▲";
+            position: absolute;
+            right: 8px;
+        }
+        th.desc::after {
+            content: "▼";
+            position: absolute;
+            right: 8px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/utif@3.0.0/UTIF.min.js"></script> <!-- библиотека для TIFF -->
+</head>
+<body>
+    <h1>Image Information</h1>
+    
+    <!-- Folder Upload Form -->
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="folderInput">Choose a folder:</label>
+        <input type="file" id="folderInput" name="folder" webkitdirectory><br><br>
+        <button type="submit">Upload</button>
+    </form>
+    
+    <table>
+        <thead>
+            <tr>
+                <th data-column="fileName">File Name</th>
+                <th data-column="dimensions">Dimensions (px)</th>
+                <th data-column="resolution">Resolution (dpi)</th>
+                <th data-column="colorDepth">Color Depth</th>
+                <th data-column="compression">Compression</th>
+            </tr>
+        </thead>
+        <tbody id="fileInfo">
+            <!-- Information will be inserted here dynamically -->
+        </tbody>
+    </table>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const folderInput = document.getElementById('folderInput');
+            const files = folderInput.files;
+
+            const fileInfoTable = document.getElementById('fileInfo');
+            fileInfoTable.innerHTML = ''; // Clear previous data
+
+            if (files.length > 0) {
+                Array.from(files).forEach(file => {
+                    const row = document.createElement('tr');
+                    const fileNameCell = document.createElement('td');
+                    const dimensionsCell = document.createElement('td');
+                    const resolutionCell = document.createElement('td');
+                    const colorDepthCell = document.createElement('td');
+                    const compressionCell = document.createElement('td');
+
+                    fileNameCell.textContent = file.name;
+
+                    const reader = new FileReader();
+
+                    if (file.type.includes('image/tiff')) {
+                        reader.onload = function(e) {
+                            const tiffArrayBuffer = e.target.result;
+                            const tiffImage = UTIF.decode(tiffArrayBuffer)[0];
+                            UTIF.decodeImage(tiffArrayBuffer, tiffImage);
+
+                            dimensionsCell.textContent = `${tiffImage.width}x${tiffImage.height}px`;
+                            resolutionCell.textContent = `${tiffImage.XResolution || 300} dpi`;
+                            colorDepthCell.textContent = `${tiffImage.bitsPerSample * tiffImage.samplesPerPixel}-bit`;
+                            compressionCell.textContent = `TIFF (${tiffImage.compression})`;
+
+                            row.appendChild(fileNameCell);
+                            row.appendChild(dimensionsCell);
+                            row.appendChild(resolutionCell);
+                            row.appendChild(colorDepthCell);
+                            row.appendChild(compressionCell);
+                            fileInfoTable.appendChild(row);
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else if (file.type.includes('image/jpeg') || file.type.includes('image/png') ||
+                               file.type.includes('image/bmp') || file.type.includes('image/gif') || file.type.includes('image/webp')) {
+                        const img = new Image();
+                        reader.onload = function(e) {
+                            img.src = e.target.result;
+                        };
+                        img.onload = function() {
+                            dimensionsCell.textContent = `${img.width}x${img.height}px`;
+                            resolutionCell.textContent = '300 dpi'; 
+                            colorDepthCell.textContent = '24-bit';
+                            compressionCell.textContent = file.type.includes('jpeg') ? 'JPEG' : file.type.toUpperCase();
+
+                            row.appendChild(fileNameCell);
+                            row.appendChild(dimensionsCell);
+                            row.appendChild(resolutionCell);
+                            row.appendChild(colorDepthCell);
+                            row.appendChild(compressionCell);
+                            fileInfoTable.appendChild(row);
+                        };
+                        reader.readAsDataURL(file);
+                    } else {
+                        fileNameCell.textContent = `${file.name} (Unsupported Format)`;
+                        row.appendChild(fileNameCell);
+                        fileInfoTable.appendChild(row);
+                    }
+                });
+            } else {
+                alert('Please select a folder.');
+            }
+        });
+
+        // Sorting logic
+        document.querySelectorAll('th').forEach(header => {
+            header.addEventListener('click', function() {
+                const table = document.querySelector('tbody');
+                const rows = Array.from(table.rows);
+                const column = this.getAttribute('data-column');
+                const isAscending = this.classList.contains('asc');
+
+                document.querySelectorAll('th').forEach(th => th.classList.remove('asc', 'desc'));
+                this.classList.toggle('asc', !isAscending);
+                this.classList.toggle('desc', isAscending);
+
+                const compare = (a, b) => {
+                    const aVal = a.querySelector(`td:nth-child(${this.cellIndex + 1})`).textContent.trim();
+                    const bVal = b.querySelector(`td:nth-child(${this.cellIndex + 1})`).textContent.trim();
+
+                    if (column === 'dimensions') {
+                        const [aWidth, aHeight] = aVal.split('x').map(Number);
+                        const [bWidth, bHeight] = bVal.split('x').map(Number);
+                        return isAscending ? (aWidth * aHeight - bWidth * bHeight) : (bWidth * bHeight - aWidth * aHeight);
+                    } else if (column === 'resolution') {
+                        return isAscending ? parseInt(aVal) - parseInt(bVal) : parseInt(bVal) - parseInt(aVal);
+                    } else if (column === 'colorDepth') {
+                        return isAscending ? parseInt(aVal) - parseInt(bVal) : parseInt(bVal) - parseInt(aVal);
+                    } else if (column === 'compression') {
+                        return isAscending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                    } else if (column === 'fileName') {
+                        return isAscending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                    }
+                };
+
+                rows.sort(compare).forEach(row => table.appendChild(row));
+            });
+        });
+    </script>
+</body>
+</html>
